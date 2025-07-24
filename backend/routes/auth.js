@@ -97,4 +97,45 @@ router.post('/signup', async (req, res) => {
   }
 });
 
+router.post('/signin', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Basic validation
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password are required.' });
+    }
+
+    // Find user by email
+    const userRes = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (userRes.rows.length === 0) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials.' });
+    }
+
+    const user = userRes.rows[0];
+    // Check password
+    const isValid = await bcrypt.compare(password, user.password_hash);
+    if (!isValid) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials.' });
+    }
+
+    // (Optionally: generate and return JWT or session token here)
+    res.json({
+      success: true,
+      message: 'Login successful!',
+      user: {
+        id: user.id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        email: user.email,
+        fitness_level: user.fitness_level,
+        primary_goal: user.primary_goal,
+      }
+    });
+  } catch (err) {
+    console.error('Signin error:', err);
+    res.status(500).json({ success: false, message: 'Internal server error.' });
+  }
+});
+
 module.exports = router;
