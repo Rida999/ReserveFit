@@ -4,6 +4,7 @@ const express = require('express');
 const cors    = require('cors');
 
 const authRouter = require('./routes/auth');
+const adminRouter = require('./routes/admin');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -25,6 +26,9 @@ app.get('/health', (_req, res) => res.send('OK'));
 app.use('/auth', authRouter);
 
 app.use('/api', require('./routes/api'));
+
+// Admin routes
+app.use('/admin', adminRouter);
 
 // 404 handler
 app.use((req, res) => {
