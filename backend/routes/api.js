@@ -16,6 +16,20 @@ router.get('/programs', async (req, res) => {
   res.json(result.rows);
 });
 
+// GET /api/slots
+router.get('/slots', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, trainer_id, slot_start, slot_end, is_booked FROM appointment_slots'
+    );
+    res.json(result.rows); // returns an array of slots
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Failed to fetch slots' });
+  }
+});
+
+
 // GET /api/trainers/:trainerId/slots?date=YYYY-MM-DD
 router.get('/trainers/:trainerId/slots', async (req, res) => {
   const { trainerId } = req.params;

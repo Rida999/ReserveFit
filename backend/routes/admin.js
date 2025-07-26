@@ -33,20 +33,51 @@ router.post('/trainers', async (req, res) => {
 });
 
 // --- SLOTS ---
+// POST /admin/slots
 router.post('/slots', async (req, res) => {
-  const { trainer_id, slot_start, slot_end } = req.body;
+  const { trainer_id, slot_start, slot_end, splitSlots } = req.body;
+  if (!trainer_id || !slot_start || !slot_end) {
+    return res.status(400).json({ success: false, error: "Missing data" });
+  }
   try {
-    const result = await pool.query(
-      `INSERT INTO appointment_slots (id, trainer_id, slot_start, slot_end, is_booked, created_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, false, NOW()) RETURNING *`,
-      [trainer_id, slot_start, slot_end]
-    );
-    res.json({ success: true, slot: result.rows[0] });
+    let start = new Date(slot_start);
+    const end = new Date(slot_end);
+    if (start >= end) return res.status(400).json({ success: false, error: "End time must be after start time" });
+
+    const slots = [];
+    if (splitSlots) {
+      while (start < end) {
+        const slotEnd = new Date(start);
+        slotEnd.setHours(slotEnd.getHours() + 1);
+        if (slotEnd > end) slotEnd.setTime(end.getTime());
+        slots.push({ start: new Date(start), end: new Date(slotEnd) });
+        start = new Date(slotEnd);
+      }
+    } else {
+      slots.push({ start, end });
+    }
+
+    if (slots.length === 0) {
+      return res.status(400).json({ success: false, error: "No slots generated. Choose a longer time range." });
+    }
+
+    // Insert all slots
+    const results = [];
+    for (const s of slots) {
+      const result = await pool.query(
+        `INSERT INTO appointment_slots (id, trainer_id, slot_start, slot_end, is_booked)
+         VALUES (gen_random_uuid(), $1, $2, $3, false) RETURNING *`,
+        [trainer_id, s.start, s.end]
+      );
+      results.push(result.rows[0]);
+    }
+
+    res.json({ success: true, slots: results });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error(err);
+    res.status(500).json({ success: false, error: "Failed to create slots" });
   }
 });
 
-// --- (OPTIONAL) Delete program/trainer/slot, update, etc. ---
 
 module.exports = router;
