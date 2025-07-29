@@ -47,48 +47,49 @@ router.get('/trainers/:trainerId/slots', async (req, res) => {
   res.json(result.rows);
 });
 
-// POST /api/bookings
-router.post('/bookings', async (req, res) => {
-  const userId = req.user.id; // assumes JWT or session middleware sets req.user
-  const id = uuidv4();
-  const { slotId, programId, notes } = req.body;
-
-  // 1. Check if slot exists and is available
-  const slotResult = await pool.query(
-    'SELECT * FROM appointment_slots WHERE id = $1 AND is_booked = false',
-    [slotId]
-  );
-  if (slotResult.rows.length === 0) {
-    return res.status(400).json({ success: false, message: 'This slot is already booked or unavailable.' });
+// POST /admin/slots
+router.post('/slots', async (req, res) => {
+  const { trainer_id, slot_start, slot_end } = req.body;
+  if (!trainer_id || !slot_start || !slot_end) {
+    return res.status(400).json({ success: false, error: "Missing data" });
   }
-
-  // 2. Book the slot (transaction)
   try {
-    await pool.query('BEGIN');
+    // Convert to Date objects
+    let start = new Date(slot_start);
+    const end = new Date(slot_end);
+    if (start >= end) return res.status(400).json({ success: false, error: "End time must be after start time" });
 
-    // Update slot to booked
-    await pool.query(
-      'UPDATE appointment_slots SET is_booked = true WHERE id = $1',
-      [slotId]
-    );
+    // Prepare slot creation
+    const slots = [];
+    while (start < end) {
+      const slotEnd = new Date(start);
+      slotEnd.setHours(slotEnd.getHours() + 1);
+      if (slotEnd > end) break;
+      slots.push({ start: new Date(start), end: new Date(slotEnd) });
+      start = slotEnd;
+    }
+    if (slots.length === 0) {
+      return res.status(400).json({ success: false, error: "No slots generated. Choose a longer time range." });
+    }
 
-    // Create the session
-    const sessionResult = await pool.query(
-      `INSERT INTO sessions (id, user_id, slot_id, program_id, notes, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, 'booked', NOW())
-       RETURNING *`,
-      [id, userId, slotId, programId, notes || null]
-    );
+    // Insert all slots
+    const results = [];
+    for (const s of slots) {
+      const result = await pool.query(
+        `INSERT INTO appointment_slots (trainer_id, slot_start, slot_end, is_booked)
+         VALUES ($1, $2, $3, false) RETURNING *`,
+        [trainer_id, s.start, s.end]
+      );
+      results.push(result.rows[0]);
+    }
 
-    await pool.query('COMMIT');
-
-    res.json({ success: true, session: sessionResult.rows[0] });
+    res.json({ success: true, slots: results });
   } catch (err) {
-    await pool.query('ROLLBACK');
     console.error(err);
-    res.status(500).json({ success: false, message: 'Booking failed. Please try again.' });
+    res.status(500).json({ success: false, error: "Failed to create slots" });
   }
 });
+
 
 // GET /api/my-sessions.  (get all user bookings)
 router.get('/my-sessions', async (req, res) => {

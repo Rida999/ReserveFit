@@ -16,7 +16,7 @@ app.use((req, res, next) => {
 });
 
 // Allow your React app (on 5173) to talk to this server
-app.use(cors({ origin: 'http://localhost:8080', credentials: true }));
+app.use(cors({ origin: 'http://localhost:8081', credentials: true }));
 app.use(express.json());
 
 // Health check
