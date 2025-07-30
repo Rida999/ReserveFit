@@ -6,9 +6,31 @@ const router = express.Router();
 
 // GET /api/trainers
 router.get('/trainers', async (req, res) => {
-  const result = await pool.query('SELECT id, first_name, last_name, headline, rating FROM trainers WHERE is_active = true');
-  res.json(result.rows);
+  try {
+    const result = await pool.query(`
+      SELECT
+        id,
+        first_name,
+        last_name,
+        photo_url,         -- for your <img>
+        headline,          -- optional subtitle
+        bio,               -- fallback if no description
+        rating,
+        clients_count,     -- number of clients
+        start_date,        -- for years of experience if you like
+        created_at,        -- to sort by newest
+        description        -- ← your new column
+      FROM trainers
+      WHERE is_active = true
+      ORDER BY created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load trainers" });
+  }
 });
+
 
 // GET /api/programs
 router.get('/programs', async (req, res) => {
