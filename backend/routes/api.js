@@ -34,9 +34,27 @@ router.get('/trainers', async (req, res) => {
 
 // GET /api/programs
 router.get('/programs', async (req, res) => {
-  const result = await pool.query('SELECT id, name FROM programs');
-  res.json(result.rows);
+  try {
+    const result = await pool.query(`
+      SELECT
+        id,
+        name,
+        description,
+        duration_min,
+        duration_max,
+        intensity,
+        icon,
+        features
+      FROM programs
+      ORDER BY created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching programs:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
+
 
 // GET /api/slots
 router.get('/slots', async (req, res) => {
