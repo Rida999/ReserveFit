@@ -1,11 +1,15 @@
 // backend/routes/auth.js
+require('dotenv').config();
 const express = require('express');
 const bcrypt  = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
+const jwt     = require('jsonwebtoken');
 const pool    = require('../db');
 
 const router = express.Router();
+const { SALT_ROUNDS, JWT_SECRET, JWT_EXPIRES_IN } = process.env;
 
+// ── SIGN UP ───────────────────────────────────────────────────────────────
 router.post('/signup', async (req, res) => {
   try {
     const {
@@ -20,7 +24,6 @@ router.post('/signup', async (req, res) => {
       agreeToTerms,
     } = req.body;
 
-    // 1) Basic required-field checks
     if (
       !first_name ||
       !last_name ||
@@ -35,24 +38,18 @@ router.post('/signup', async (req, res) => {
         .json({ success: false, message: 'All fields are required.' });
     }
 
-    // 2) Password match
     if (password !== confirm_password) {
       return res
         .status(400)
         .json({ success: false, message: 'Passwords do not match.' });
     }
 
-    // 3) Terms checkbox
     if (!agreeToTerms) {
       return res
         .status(400)
-        .json({
-          success: false,
-          message: 'You must agree to the Terms of Service.',
-        });
+        .json({ success: false, message: 'You must agree to the Terms of Service.' });
     }
 
-    // 4) Email uniqueness
     const existing = await pool.query(
       'SELECT 1 FROM users WHERE email = $1',
       [email]
@@ -63,16 +60,14 @@ router.post('/signup', async (req, res) => {
         .json({ success: false, message: 'Email already in use.' });
     }
 
-    // 5) Hash password
-    const saltRounds = parseInt(process.env.SALT_ROUNDS);
-    const password_hash = await bcrypt.hash(password, saltRounds);
+    const salt = parseInt(SALT_ROUNDS, 10);
+    const password_hash = await bcrypt.hash(password, salt);
 
-    // 6) Insert
     const id = uuidv4();
     await pool.query(
       `INSERT INTO users
-        (id, first_name, last_name, email, phone_number,
-         password_hash, fitness_level, primary_goal, created_at)
+         (id, first_name, last_name, email, phone_number,
+          password_hash, fitness_level, primary_goal, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())`,
       [
         id,
@@ -86,9 +81,12 @@ router.post('/signup', async (req, res) => {
       ]
     );
 
+    // Generate JWT
+    const token = jwt.sign({ id, email }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+
     res
       .status(201)
-      .json({ success: true, message: 'Account created successfully!' });
+      .json({ success: true, message: 'Account created successfully!', token });
   } catch (err) {
     console.error('Signup error:', err);
     res
@@ -97,40 +95,43 @@ router.post('/signup', async (req, res) => {
   }
 });
 
+// ── SIGN IN ───────────────────────────────────────────────────────────────
 router.post('/signin', async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // Basic validation
     if (!email || !password) {
-      return res.status(400).json({ success: false, message: 'Email and password are required.' });
+      return res
+        .status(400)
+        .json({ success: false, message: 'Email and password are required.' });
     }
 
-    // Find user by email
-    const userRes = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    const userRes = await pool.query(
+      'SELECT * FROM users WHERE email = $1',
+      [email]
+    );
     if (userRes.rows.length === 0) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials.' });
+      return res
+        .status(401)
+        .json({ success: false, message: 'Invalid credentials.' });
     }
 
     const user = userRes.rows[0];
-    // Check password
     const isValid = await bcrypt.compare(password, user.password_hash);
     if (!isValid) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials.' });
+      return res
+        .status(401)
+        .json({ success: false, message: 'Invalid credentials.' });
     }
 
-    // (Optionally: generate and return JWT or session token here)
+    // Create token payload & sign
+    const payload = { id: user.id, email: user.email };
+    const token   = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+
     res.json({
       success: true,
       message: 'Login successful!',
-      user: {
-        id: user.id,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        email: user.email,
-        fitness_level: user.fitness_level,
-        primary_goal: user.primary_goal,
-      }
+      token,
+      user: payload
     });
   } catch (err) {
     console.error('Signin error:', err);

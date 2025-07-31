@@ -12,14 +12,14 @@ router.get('/trainers', async (req, res) => {
         id,
         first_name,
         last_name,
-        photo_url,         -- for your <img>
-        headline,          -- optional subtitle
-        bio,               -- fallback if no description
+        photo_url,
+        headline,
+        bio,
         rating,
-        clients_count,     -- number of clients
-        start_date,        -- for years of experience if you like
-        created_at,        -- to sort by newest
-        description        -- ← your new column
+        clients_count,
+        start_date,
+        created_at,
+        description
       FROM trainers
       WHERE is_active = true
       ORDER BY created_at DESC
@@ -30,7 +30,6 @@ router.get('/trainers', async (req, res) => {
     res.status(500).json({ error: "Failed to load trainers" });
   }
 });
-
 
 // GET /api/programs
 router.get('/programs', async (req, res) => {
@@ -55,27 +54,24 @@ router.get('/programs', async (req, res) => {
   }
 });
 
-
 // GET /api/slots
 router.get('/slots', async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT id, trainer_id, slot_start, slot_end, is_booked FROM appointment_slots'
     );
-    res.json(result.rows); // returns an array of slots
+    res.json(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: 'Failed to fetch slots' });
   }
 });
 
-
 // GET /api/trainers/:trainerId/slots?date=YYYY-MM-DD
 router.get('/trainers/:trainerId/slots', async (req, res) => {
   const { trainerId } = req.params;
   const { date } = req.query;
 
-  // Only fetch slots for the selected date and where is_booked is false
   const result = await pool.query(
     `SELECT id, slot_start, slot_end
      FROM appointment_slots
@@ -87,51 +83,30 @@ router.get('/trainers/:trainerId/slots', async (req, res) => {
   res.json(result.rows);
 });
 
-// POST /admin/slots
-router.post('/slots', async (req, res) => {
-  const { trainer_id, slot_start, slot_end } = req.body;
-  if (!trainer_id || !slot_start || !slot_end) {
-    return res.status(400).json({ success: false, error: "Missing data" });
-  }
+// POST /api/bookings
+router.post('/bookings', async (req, res) => {
+  const { slotId, programId, notes } = req.body;
+  const userId = req.user.id;
+
   try {
-    // Convert to Date objects
-    let start = new Date(slot_start);
-    const end = new Date(slot_end);
-    if (start >= end) return res.status(400).json({ success: false, error: "End time must be after start time" });
-
-    // Prepare slot creation
-    const slots = [];
-    while (start < end) {
-      const slotEnd = new Date(start);
-      slotEnd.setHours(slotEnd.getHours() + 1);
-      if (slotEnd > end) break;
-      slots.push({ start: new Date(start), end: new Date(slotEnd) });
-      start = slotEnd;
-    }
-    if (slots.length === 0) {
-      return res.status(400).json({ success: false, error: "No slots generated. Choose a longer time range." });
-    }
-
-    // Insert all slots
-    const results = [];
-    for (const s of slots) {
-      const result = await pool.query(
-        `INSERT INTO appointment_slots (trainer_id, slot_start, slot_end, is_booked)
-         VALUES ($1, $2, $3, false) RETURNING *`,
-        [trainer_id, s.start, s.end]
-      );
-      results.push(result.rows[0]);
-    }
-
-    res.json({ success: true, slots: results });
+    const result = await pool.query(
+      `
+      INSERT INTO sessions
+        (id, user_id, slot_id, program_id, notes, status, created_at)
+      VALUES
+        (gen_random_uuid(), $1, $2, $3, $4, 'booked', NOW())
+      RETURNING *;
+      `,
+      [userId, slotId, programId, notes]
+    );
+    res.json({ success: true, session: result.rows[0] });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, error: "Failed to create slots" });
+    console.error('Booking error:', err);
+    res.status(500).json({ success: false, message: 'Booking failed' });
   }
 });
 
-
-// GET /api/my-sessions.  (get all user bookings)
+// GET /api/my-sessions
 router.get('/my-sessions', async (req, res) => {
   const userId = req.user.id;
   const result = await pool.query(
@@ -151,5 +126,59 @@ router.get('/my-sessions', async (req, res) => {
 });
 
 
+// ——— NEW: Users API ———
+
+// GET /api/users
+router.get('/users', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        id,
+        first_name,
+        last_name,
+        email,
+        phone_number,
+        fitness_level,
+        primary_goal,
+        created_at
+      FROM users
+      ORDER BY created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching users:', err);
+    res.status(500).json({ error: 'Failed to load users' });
+  }
+});
+
+// GET /api/users/:userId
+router.get('/users/:userId', async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        id,
+        first_name,
+        last_name,
+        email,
+        phone_number,
+        fitness_level,
+        primary_goal,
+        created_at
+      FROM users
+      WHERE id = $1
+      `,
+      [userId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error fetching user:', err);
+    res.status(500).json({ error: 'Failed to load user' });
+  }
+});
 
 module.exports = router;
